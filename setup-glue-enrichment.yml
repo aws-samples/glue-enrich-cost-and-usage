@@ -1,0 +1,191 @@
+ # Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
+ # SPDX-License-Identifier: MIT-0
+ #
+ # Permission is hereby granted, free of charge, to any person obtaining a copy of this
+ # software and associated documentation files (the "Software"), to deal in the Software
+ # without restriction, including without limitation the rights to use, copy, modify,
+ # merge, publish, distribute, sublicense, and/or sell copies of the Software, and to
+ # permit persons to whom the Software is furnished to do so.
+ #
+ # THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED,
+ # INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A
+ # PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT
+ # HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION
+ # OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE
+ # SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+ #
+AWSTemplateFormatVersion: "2010-09-09"
+Description: Creates Glue Jobs, a Glue Catalog, an S3 Bucket, and an IAM role for the glue-cur-enricher example.
+Parameters:
+  S3SourceBucket:
+    Type: String
+    Description: "Name of the S3 bucket containing the existing Cost & Usage Reports"
+    Default: ""
+    AllowedPattern: '^$|[0-9a-zA-Z]+([0-9a-zA-Z-]#[0-9a-zA-Z])#$'
+    ConstraintDescription: "Bucket name can include numbers, lowercase letters, uppercase letters, and hyphens (-). It cannot start or end with a hyphen (-)."
+
+  S3SourcePrefix:
+    Type: String
+    Description: "Prefix (path) within S3 Bucket where the existing Cost & Usage Reports can be found. Example: cur/cur_report"
+    Default: ""
+Metadata:
+  'AWS::CloudFormation::Interface':
+    ParameterGroups:
+      - Label:
+          default: "Cost & Usage Report Parameters"
+        Parameters:
+          - S3SourceBucket
+          - S3SourcePrefix
+    ParameterLabels:
+      S3SourceBucket:
+        default: Cost and Usage Report Source Bucket
+      S3SourcePrefix:
+        default: Cost and Usage Report S3 Prefix
+Resources:
+  EnrichedCURBucket:
+    Type: AWS::S3::Bucket
+      
+  EnrichedCURRole:
+    Type: 'AWS::IAM::Role'
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+                - glue.amazonaws.com
+            Action:
+              - 'sts:AssumeRole'
+      Path: /
+      ManagedPolicyArns: 
+        - arn:aws:iam::aws:policy/service-role/AWSGlueServiceRole
+        - arn:aws:iam::aws:policy/AWSOrganizationsReadOnlyAccess
+      Policies:
+        - PolicyName: AccessAthena
+          PolicyDocument:
+            Version: 2012-10-17
+            Statement:
+              - Effect: Allow
+                Action: 
+                  - s3:GetBucketLocation
+                  - s3:GetObject
+                  - s3:ListBucket
+                  - s3:ListBucketMultipartUploads
+                  - s3:ListMultipartUploadParts
+                  - s3:AbortMultipartUpload
+                  - s3:CreateBucket
+                  - s3:PutObject
+                Resource: 'arn:aws:s3:::aws-athena-query-results-*'
+              - Effect: Allow
+                Action: 
+                  - athena:StartQueryExecution
+                  - athena:GetQueryExecution
+                  - athena:GetQueryResults
+                Resource: !Sub 'arn:aws:athena:*:${AWS::AccountId}:workgroup/*'
+              - Effect: Allow
+                Action: athena:GetQueryExecutions
+                Resource: '*'
+        - PolicyName: EnrichedCURS3SourceReadOnly
+          PolicyDocument:
+            Version: 2012-10-17
+            Statement:
+              - Effect: Allow
+                Action: 
+                - s3:GetObject
+                - s3:ListBucket
+                Resource: 
+                - !Sub 'arn:aws:s3:::${S3SourceBucket}/${S3SourcePrefix}/*'  
+        - PolicyName: EnrichedCURS3TargetReadWrite
+          PolicyDocument:
+            Version: 2012-10-17
+            Statement:
+              - Effect: Allow
+                Action: 
+                - s3:GetObject
+                - s3:ListBucket
+                - s3:PutObject
+                - s3:DeleteObject
+                Resource: 
+                - !Sub 'arn:aws:s3:::${EnrichedCURBucket}/${S3SourcePrefix}/*'                
+        - PolicyName: GlueS3PythonFilesLibReadOnly
+          PolicyDocument:
+            Version: 2012-10-17
+            Statement:
+              - Effect: Allow
+                Action: 
+                - s3:GetObject
+                Resource: 
+                - !Sub 'arn:aws:s3:::${EnrichedCURBucket}/*'
+        - PolicyName: GlueListAllBuckets
+          PolicyDocument:
+            Version: 2012-10-17
+            Statement:
+              - Effect: Allow
+                Action:
+                - s3:ListAllMyBuckets
+                - s3:headBucket
+                Resource: '*'
+  EnrichedCURGlueDB:
+    Type: AWS::Glue::Database
+    Properties:
+      CatalogId: !Ref AWS::AccountId
+      DatabaseInput:
+        Name: 'cost_and_usage_enriched'
+        Description: Contains enriched CUR data
+ 
+  EnrichedCURFull:
+    Type: AWS::Glue::Job
+    Properties:
+      Name: aws-cur-enrichment-full
+      Command:
+        Name: pythonshell
+        PythonVersion: "3"
+        ScriptLocation: !Sub 's3://${EnrichedCURBucket}/glue-enrich-cur.py'
+      DefaultArguments:
+        "--s3_source_bucket": !Ref S3SourceBucket
+        "--s3_target_bucket": !Ref EnrichedCURBucket
+        "--s3_source_prefix": !Ref S3SourcePrefix
+        "--s3_target_prefix": !Ref S3SourcePrefix
+        "--create_table": "True"
+        "--database_name": !Ref EnrichedCURGlueDB
+        "--table_name": "cur_enriched"
+        "--overwrite_existing_table": "True" 
+        "--partition_by_account": "True"
+        "--extra-py-files": !Sub 's3://${EnrichedCURBucket}/awswrangler-1.0.1-py3-none-any.whl'
+      GlueVersion: "1.0"
+      ExecutionProperty:
+        MaxConcurrentRuns: 1
+      MaxCapacity: 1
+      MaxRetries: 0
+      Role: !Ref EnrichedCURRole
+  EnrichedCURIncremental:
+    Type: AWS::Glue::Job
+    Properties:
+      Name: aws-cur-enrichment-incremental
+      Command:
+        Name: pythonshell
+        PythonVersion: "3"
+        ScriptLocation: !Sub 's3://${EnrichedCURBucket}/glue-enrich-cur.py'
+      DefaultArguments:
+        "--s3_source_bucket": !Ref S3SourceBucket
+        "--s3_target_bucket": !Ref EnrichedCURBucket
+        "--s3_source_prefix": !Ref S3SourcePrefix
+        "--s3_target_prefix": !Ref S3SourcePrefix
+        "--create_table": "True"
+        "--database_name": !Ref EnrichedCURGlueDB
+        "--table_name": "cur_enriched"
+        "--overwrite_existing_table": "True"
+        "--partition_by_account": "True"
+        "--incremental_mode_months": "2"
+        "--extra-py-files": !Sub 's3://${EnrichedCURBucket}/awswrangler-1.0.1-py3-none-any.whl'
+      GlueVersion: "1.0"
+      ExecutionProperty:
+        MaxConcurrentRuns: 1
+      MaxCapacity: 1
+      MaxRetries: 0
+      Role: !Ref EnrichedCURRole   
+Outputs:
+  EnrichedCURBucketUrl: 
+    Description: Use this link to go to the AWS S3 Console and upload your the .py script and .whl file. The enriched CUR files will also be written to this bucket.
+    Value: !Join ['', ['https://s3.console.aws.amazon.com/s3/buckets/', !Ref EnrichedCURBucket ]]
