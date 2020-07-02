@@ -14,7 +14,7 @@ This script uses the [AWS Data Wrangler](https://github.com/awslabs/aws-data-wra
 
 ## Prerequisites
 1. *An AWS Account and AWS Organizations enabled:*  In order to use Organizations tags with accounts, AWS Organizations must be enabled . The resources used in this blog post must be deployed in the master account.
-2. *Cost & Usage Report: *A Cost & Usage Report must be defined in the Master account. The report must be written in Apache Parquet format to an S3 bucket. Instructions for creating a Cost & Usage Report are available in the AWS Documentation (https://docs.aws.amazon.com/cur/latest/userguide/cur-create.html).  *Please note:* Once you’ve setup a Cost & Usage Report, it can take up to 24 hours for the first report to be delivered to S3. You will not be able to use this solution until you have at least one report delivered
+2. *Cost & Usage Report*: A Cost & Usage Report must be defined in the Master account. The report must be written in Apache Parquet format to an S3 bucket. Instructions for creating a Cost & Usage Report are available in the AWS Documentation (https://docs.aws.amazon.com/cur/latest/userguide/cur-create.html).  *Please note:* Once you’ve setup a Cost & Usage Report, it can take up to 24 hours for the first report to be delivered to S3. You will not be able to use this solution until you have at least one report delivered
 
 
 ## How it works
@@ -23,7 +23,7 @@ The CloudFormation template used in the setup below creates the following resour
 
 * **Glue Python Shell Jobs**- These shell jobs contain Python scripts that will perform the ETL operations, loading the data from the existing Cost & Usage Report files and then writing the processed dataset back to S3. One job will perform a “Full” ETL on all existing report data, while the other job will perform an “Incremental” ETL on data from the past 2 months. 
     
-    Note: Glue Jobs are billed per second (https://aws.amazon.com/glue/pricing/), with a 10-minute minimum. In most environments, the incremental job should take less than 10 minutes to complete and cost less than $0.15 per day to run. Customers that wish to process all historical Cost & Usage Data or that have dozens or hundreds of AWS accounts can monitor the job duration and logs for a more accurate estimate.
+    **Note**: Glue Jobs are billed per second (https://aws.amazon.com/glue/pricing/), with a 10-minute minimum. In most environments, the incremental job should take less than 10 minutes to complete and is estimated to cost less than $0.15 per day to run. Customers that wish to process all historical Cost & Usage Data or that have dozens or hundreds of AWS accounts can monitor the job duration and logs for a more accurate estimate.
     
 * **Glue Database**- The database will be used to store metadata about our enriched Cost & Usage Report data. This is primarily so we can perform queries in Athena later. 
     
@@ -52,7 +52,7 @@ When the Glue job completes the enriched reports can be queried via Athena, as d
 
 4. Upload: awswrangler-1.0.1-py3-none-any.whl and glue-enrich-cur.py
 
-5. **To add the tags to all historical CUR data**, go to the [AWS Glue console](https://console.aws.amazon.com/glue/home?region=us-east-1#etl:tab=jobs) and run the `aws-cur-enrichment-fill` job. If you would prefer to limit this, you can use the `aws-cur-enrichment-incremental` job instead. 
+5. **To add the tags to all historical CUR data**, go to the [AWS Glue console](https://console.aws.amazon.com/glue/home?region=us-east-1#etl:tab=jobs) and run the `aws-cur-enrichment-full` job. If you would prefer to limit this, you can use the `aws-cur-enrichment-incremental` job instead. 
 
 6. (Optional) Schedule `aws-cur-enrichment-incremental` to run once a day. You could also make this event-driven by using S3 events so that it runs each time a new CUR file is delivered. This incremental job will update the accounts tags for the current month AND the previous month. This makes the job run faster, process less data, and avoids altering accounts tags from previous month reports so that the behavior is similar to cost allocation tags (where tags are not retroactively modified in historical CUR data).
 
