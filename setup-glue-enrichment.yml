@@ -20,8 +20,7 @@ Parameters:
   S3SourceBucket:
     Type: String
     Description: "Name of the S3 bucket containing the existing Cost & Usage Reports"
-    Default: ""
-    AllowedPattern: '^$|[0-9a-zA-Z]+([0-9a-zA-Z-]#[0-9a-zA-Z])#$'
+    AllowedPattern: "^[0-9a-zA-Z]+([0-9a-zA-Z-]*[0-9a-zA-Z])*$"
     ConstraintDescription: "Bucket name can include numbers, lowercase letters, uppercase letters, and hyphens (-). It cannot start or end with a hyphen (-)."
 
   S3SourcePrefix:
@@ -107,16 +106,7 @@ Resources:
                 - s3:PutObject
                 - s3:DeleteObject
                 Resource: 
-                - !Sub 'arn:aws:s3:::${EnrichedCURBucket}/${S3SourcePrefix}/*'                
-        - PolicyName: GlueS3PythonFilesLibReadOnly
-          PolicyDocument:
-            Version: 2012-10-17
-            Statement:
-              - Effect: Allow
-                Action: 
-                - s3:GetObject
-                Resource: 
-                - !Sub 'arn:aws:s3:::${EnrichedCURBucket}/*'
+                - !Sub 'arn:aws:s3:::${EnrichedCURBucket}/*'                
         - PolicyName: GlueListAllBuckets
           PolicyDocument:
             Version: 2012-10-17
@@ -146,13 +136,12 @@ Resources:
         "--s3_source_bucket": !Ref S3SourceBucket
         "--s3_target_bucket": !Ref EnrichedCURBucket
         "--s3_source_prefix": !Ref S3SourcePrefix
-        "--s3_target_prefix": !Ref S3SourcePrefix
         "--create_table": "True"
         "--database_name": !Ref EnrichedCURGlueDB
         "--table_name": "cur_enriched"
         "--overwrite_existing_table": "True" 
         "--partition_by_account": "True"
-        "--extra-py-files": !Sub 's3://${EnrichedCURBucket}/awswrangler-1.0.1-py3-none-any.whl'
+        "--extra-py-files": !Sub 's3://${EnrichedCURBucket}/awswrangler-2.5.0-py3-none-any.whl'
       GlueVersion: "1.0"
       ExecutionProperty:
         MaxConcurrentRuns: 1
@@ -171,14 +160,13 @@ Resources:
         "--s3_source_bucket": !Ref S3SourceBucket
         "--s3_target_bucket": !Ref EnrichedCURBucket
         "--s3_source_prefix": !Ref S3SourcePrefix
-        "--s3_target_prefix": !Ref S3SourcePrefix
         "--create_table": "True"
         "--database_name": !Ref EnrichedCURGlueDB
         "--table_name": "cur_enriched"
         "--overwrite_existing_table": "True"
         "--partition_by_account": "True"
         "--incremental_mode_months": "2"
-        "--extra-py-files": !Sub 's3://${EnrichedCURBucket}/awswrangler-1.0.1-py3-none-any.whl'
+        "--extra-py-files": !Sub 's3://${EnrichedCURBucket}/awswrangler-2.5.0-py3-none-any.whl'
       GlueVersion: "1.0"
       ExecutionProperty:
         MaxConcurrentRuns: 1

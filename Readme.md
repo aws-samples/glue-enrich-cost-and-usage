@@ -6,11 +6,14 @@ This script uses the [AWS Data Wrangler](https://github.com/awslabs/aws-data-wra
 
 ## Functionality
 - The script uses a Glue Python Shell Job to process the CUR data, merge the account tags, and then rewrite the "enriched" data in Parquet to another S3 bucket and/or path.
-- Optionally, it can also create a table in Glue that can be used to perform queries in Athena. You could also define use a Glue crawler for this purpose.
+- The AWS account information, including account tags, is collected from the AWS Organizations API and written to S3. A table is defined in the Glue data catalog so that it can be queried.
+- The script can also create a table in Glue that can be used to perform queries in Athena. You could also define use a Glue crawler for this purpose.
 - Optionally, it can also further partition the data by line_item_account_id. 
 - The Glue job can be configured to process all CUR files in S3, or it can perform an "Incremental" processing, where it will only process CUR files from the last x months. It is recommended that you do a one time full processing/enrichment on all CUR files and then periodic "Fulls" 
 - The Python Shell script uses the [AWS Data Wrangler](https://aws-data-wrangler.readthedocs.io/en/latest/) package. This package extends the Pandas library, making it easy to work with Athena, Glue, S3, RedShift, Cloudwatch Logs, Aurora, SageMaker, DynamoDB, and EMR. 
 
+### Technical Note
+The Python Shell script originally used Pandas DataFrames to perform the ETL operations. In later released, this has been offloaded to Athena CREATE TABLE AS SELECT statements with temporary Glue data catalog tables. One motivator for this approach was work around Spark and pyarrow's limited support for Delta encoded columns, which CUR data written in Parquet format [occasionally contains](https://github.com/awslabs/aws-data-wrangler/issues/442). If you want to see the original script, you can find it in [this commit](https://github.com/aws-samples/glue-enrich-cost-and-usage/tree/333e8af620bea2dde41e5126fc558ba6eecc94bc). 
 
 ## Prerequisites
 1. *An AWS Account and AWS Organizations enabled:*  In order to use Organizations tags with accounts, AWS Organizations must be enabled . The resources used in this blog post must be deployed in the master account.
@@ -50,7 +53,7 @@ When the Glue job completes the enriched reports can be queried via Athena, as d
 
 3. After the CloudFormation stack is created, go to outputs and click the link to the S3 bucket that the stack created.
 
-4. Upload: awswrangler-1.0.1-py3-none-any.whl and glue-enrich-cur.py
+4. Upload: awswrangler-2.5.0-py3-none-any.whl and glue-enrich-cur.py
 
 5. **To add the tags to all historical CUR data**, go to the [AWS Glue console](https://console.aws.amazon.com/glue/home?region=us-east-1#etl:tab=jobs) and run the `aws-cur-enrichment-full` job. If you would prefer to limit this, you can use the `aws-cur-enrichment-incremental` job instead. 
 
@@ -61,7 +64,7 @@ When the Glue job completes the enriched reports can be queried via Athena, as d
     SELECT * FROM "cost_and_usage_enriched"."cur_enriched" limit 10;
     ```
 
-    Search for the column names that begin with `tag_` in the results and you will see your account tags (if they exist for the `line_item_usage_account_number`, otherwise the field for that record will be blank).
+    Search for the column names that begin with `account_tag_` in the results and you will see your account tags (if they exist for the `line_item_usage_account_number`, otherwise the field for that record will be blank).
 
     This is an example query that will return results where the account has `CostCenter` tag:
     ```sql
@@ -74,8 +77,9 @@ When the Glue job completes the enriched reports can be queried via Athena, as d
 This approach demonstrates the power/utility of Glue Jobs and Python Shell Scripts for ETL, but it's not the only way to solve this problem. It's worth highlighting a few alternatives to using this script:
 1. With the launch of [Cost Categories](https://docs.aws.amazon.com/awsaccountbilling/latest/aboutv2/create-cost-categories.html) it is now possible achieve similar capabilities, as the cost categories and values are also included in CUR reports. This approach also has the added benefit of working in Cost Explorer. However, you may already have Organizational accounts tags and prefer using that to manage account metadata.
 2. Instead of using a Python Shell job to join the account tags data with the CUR data, you could instead use a job to extract the account tags from the Organizations API and put them into a separate file in S3, then create an "account_tags" table in Glue. You could then use this table in Athena to perform a JOIN on "account_tags" and your CUR data table (assuming you've already created it separately). You would update the "account_tags" table on a schedule to get the latest tags.
-3. Using the same method as #2, you could use a CREATE TABLE AS SELECT (CTAS) statement in ATHENA to generate a modified CUR table with the JOINed "Account_Tags" table and CUR table.
-4. It is also possible to use an external reporting/BI tool, such as QuickSight, to merge the account tags with CUR data
+
+    **Note**: The Python Shell job creates a table with this data in the Glue data catalog that could be reused.
+3. It is also possible to use an external reporting/BI tool, such as QuickSight, to merge the account tags with CUR data
 
 
 ## Possible future enhancements
