@@ -16,14 +16,20 @@
  * SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
  */ """
 
+import argparse
+import logging
 import os
+import re
 import sys
 
 import awswrangler as wr
-import pandas as pd
 import boto3
-import argparse
-import re
+import pandas as pd
+
+logging.basicConfig(level=logging.INFO)
+
+log = logging.getLogger(__name__)
+log.setLevel(logging.INFO)
 
 orgs_client = boto3.client('organizations')
 
@@ -63,11 +69,19 @@ arg_parser.add_argument('--overwrite_existing_table', type=bool, action='store',
 arg_parser.add_argument('--partition_by_account', type=bool, action='store', required=False, default=False, help="When set, an additional partition for line_item_usage_account_id will be created. Example: /year=2020/month=1/line_item_usage_account_id=123456789012")
 arg_parser.add_argument('--database_name', type=str, required=False, default=None, help="The name of the Glue database to create the table in. Must be set when --create_table is set")
 arg_parser.add_argument('--table_name', type=str, required=False, default=None, help="The name of the Glue table to create or overwrite. Must be set when --create_table is set")
-arg_parser.add_argument('--extra-py-files', type=str, required=False, default=None)
-arg_parser.add_argument('--scriptLocation', type=str, required=False, default=None)
-arg_parser.add_argument('--job-bookmark-option', type=str, required=False, default=None)
-arg_parser.add_argument('--job-language', type=str, required=False, default=None)
-print(vars(arg_parser.parse_args() ))
+arg_parser.add_argument('--exclude_fields', type=str, nargs="*", required=False, default=[], help="Columns or fields in the CUR data to exclude from the enriched report. Useful for creating resports with fewer columns. This does not affect AWS account tags, use --exclude_account_tags for that.")
+arg_parser.add_argument('--include_fields', type=str, nargs="*", required=False, default=[], help="Columns or fields in the CUR data to include. All other CUR fields will be dropped. This does not affect AWS account tags, This does not affect AWS account tags, use --include_account_tags for that.")
+arg_parser.add_argument('--include_account_tags', type=str, nargs="*", required=False, default=[], help="Organizations account tags to exclude from the enriched report. Useful when you have a lot of Organizations account tags and only want to include a filtered set.")
+arg_parser.add_argument('--exclude_account_tags', type=str, nargs="*", required=False, default=[], help="Organizations account tags to exclude from the enriched report. Useful when you want to exclude specific tags.")
+
+# Not used, but included because Glue passes these arguments in
+arg_parser.add_argument('--extra-py-files', type=str, required=False, default=None, help="NOT USED")
+arg_parser.add_argument('--scriptLocation', type=str, required=False, default=None, help="NOT USED")
+arg_parser.add_argument('--job-bookmark-option', type=str, required=False, default=None, help="NOT USED")
+arg_parser.add_argument('--job-language', type=str, required=False, default=None, help="NOT USED")
+arg_parser.add_argument('--connection-names', type=str, required=False, default=None, help="NOT USED")
+
+log.info(vars(arg_parser.parse_args() ))
 args = vars(arg_parser.parse_args())
 
 
@@ -81,13 +95,17 @@ CREATE_TABLE = args["create_table"]
 DATABASE_NAME = args["database_name"]
 TABLE_NAME = args["table_name"]
 OVERWRITE_EXISTING_TABLE = args["overwrite_existing_table"]
+INCLUDE_FIELDS = [item.lower().strip() for item in args["include_fields"]]
+EXCLUDE_FIELDS = [item.lower().strip() for item in args["exclude_fields"]]
+INCLUDE_ACCOUNT_TAGS = [item.lower().strip() for item in args["include_account_tags"]]
+EXCLUDE_ACCOUNT_TAGS = [item.lower().strip() for item in args["exclude_account_tags"]]
 
 if TABLE_NAME == None or DATABASE_NAME == None: raise Exception('Must specify Glue Database and Table when "--create_table" is set')
 if wr.catalog.does_table_exist(DATABASE_NAME,TABLE_NAME) and not OVERWRITE_EXISTING_TABLE: raise Exception('The table {}.{} already exists but OVERWRITE_EXISTING_TABLE isn''t set.'.format(DATABASE_NAME, TABLE_NAME))
 
 
 # First we retrieve the accounts through the organizations API
-print("Fetching accounts and organizations account tags")
+log.info("Fetching accounts and organizations account tags")
 accounts = get_accounts()
 account_tags_list = []
 for account in accounts.get('Accounts', {}):
@@ -101,7 +119,7 @@ for account in accounts.get('Accounts', {}):
         account_dict['account_tag_'+tag["Key"]] = tag["Value"]
     account_tags_list.append(account_dict)
 
-print("Creating account tags DataFrame")
+log.info("Creating account tags DataFrame")
 # Create DataFrame with accounts and associated tags
 account_tags_df = pd.DataFrame(account_tags_list).convert_dtypes()
 account_tags_df.info()
@@ -133,10 +151,10 @@ account_tags_columns = list(wr.catalog.get_table_types(
 account_tags_columns.remove('account_id')
 
 # Get a list of objects
-print("Listing objects in path: {}".format("s3://"+S3_SOURCE_BUCKET+"/"+S3_SOURCE_PREFIX))
+log.info("Listing objects in path: {}".format("s3://"+S3_SOURCE_BUCKET+"/"+S3_SOURCE_PREFIX))
 
 s3_objects = wr.s3.list_objects("s3://"+S3_SOURCE_BUCKET+"/"+S3_SOURCE_PREFIX)
-print("Objects found: {}".format(s3_objects))
+log.info("Objects found: {}".format(s3_objects))
 
 s3_prefixes = set()
 for object in s3_objects:
@@ -146,12 +164,12 @@ s3_prefixes = list(s3_prefixes)
 # Sort objects by month, adding leading zeros to the months to sort correctly
 s3_objects.sort(key=lambda x: re.sub(r'(month=)(\d+)', lambda m : m.group(1)+m.group(2).zfill(2),x))
 s3_prefixes.sort(key=lambda x: re.sub(r'(month=)(\d+)', lambda m : m.group(1)+m.group(2).zfill(2),x))
-print("Prefixes found: {}".format(s3_prefixes))
+log.info("Prefixes found: {}".format(s3_prefixes))
 
 # If INCREMENTAL_MODE_MONTHS is greater than zero, only use the last INCREMENTAL_MODE_MONTHS items in the list. This assumes everything is partitioned by '/year=xxxx/month=xx/'
 if INCREMENTAL_MODE_MONTHS > 0:
   s3_prefixes = s3_prefixes[-INCREMENTAL_MODE_MONTHS:]
-  print("Incremental mode set. Filtered objects: {}".format(s3_prefixes))
+  log.info("Incremental mode set. Filtered objects: {}".format(s3_prefixes))
 
 # Rather than trying to do a join on all the data at once, we're breaking it up by partition (prefix). his also allows us to perform incremental updates, leaving prior months 
 # CUR data unaltered for historical purposes if desired. It can also easier to troubleshoot with subsets of data.
@@ -159,13 +177,13 @@ for s3_prefix in s3_prefixes:
   # Make sure garbage collection happens
   #del df
   #gc.collect()  
-  print("=============")
-  print('READING METADATA: {}'.format(s3_prefix+"/"))
+  log.info("=============")
+  log.info('READING METADATA: {}'.format(s3_prefix+"/"))
   cur_column_types, partitions = wr.s3.read_parquet_metadata(
     path=s3_prefix+"/",
     dataset=True
   )
-  print('CLEANING UP TEMP TABLES IF THEY EXIST')
+  log.info('CLEANING UP TEMP TABLES IF THEY EXIST')
   wr.catalog.delete_table_if_exists(
     database=DATABASE_NAME,
     table='temp_cur_enriched'
@@ -176,7 +194,7 @@ for s3_prefix in s3_prefixes:
   )
 
   # Create a temporary table in the data catalog from the source CUR data. 
-  print('CREATING TEMP TABLE FOR: {}'.format(s3_prefix+"/"))
+  log.info('CREATING TEMP TABLE FOR: {}'.format(s3_prefix+"/"))
   wr.catalog.create_parquet_table(
     path = s3_prefix+"/",
     database = DATABASE_NAME,
@@ -191,29 +209,41 @@ for s3_prefix in s3_prefixes:
     database=DATABASE_NAME, 
     table='temp_cur_original'
   )
-  print('CLEANING UP {}'.format("s3://"+S3_TARGET_BUCKET+"/"+(S3_TARGET_PREFIX+"/" if S3_TARGET_PREFIX != "" else "")+ s3_prefix.split('/', 3)[3])+"/")
+  log.info('CLEANING UP {}'.format("s3://"+S3_TARGET_BUCKET+"/"+(S3_TARGET_PREFIX+"/" if S3_TARGET_PREFIX != "" else "")+ s3_prefix.split('/', 3)[3])+"/")
   wr.s3.delete_objects(
     path="s3://"+S3_TARGET_BUCKET+"/"+(S3_TARGET_PREFIX+"/" if S3_TARGET_PREFIX != "" else "")+ s3_prefix.split('/', 3)[3]+"/*"
   )
 
-  print('Merging account tags and writing output to {}'.format("s3://"+S3_TARGET_BUCKET+"/"+(S3_TARGET_PREFIX+"/" if S3_TARGET_PREFIX != "" else "")+ s3_prefix.split('/', 3)[3]))
+  
   
   # Note: Using a SELECT * statement won't work if we want to partition by line_item_usage_account_id because it has to be the last column in the list. 
   # The lines below build a list of column names to use in the CREATE TABLE AS SELECT (CTAS) statement. The 'account_id' column from account_tags is
   # also dropped since it's redundant.
+  log.info('Merging account tags')
   temp_cur_original_columns = list(temp_cur_original_columns.keys())
-  if PARTITION_BY_ACCOUNT: 
-    temp_cur_original_columns.remove('line_item_usage_account_id')
-    column_string = ",".join(temp_cur_original_columns)+","+",".join(account_tags_columns)+',line_item_usage_account_id'
-  else:
-    column_string = column_string = ",".join(temp_cur_original_columns)+","+",".join(account_tags_columns)
 
+  temp_cur_original_columns = [item for item in temp_cur_original_columns if item.lower().strip() not in EXCLUDE_FIELDS]
+  account_tags_columns = [item for item in account_tags_columns if item.lower().strip().replace('account_tag_', '') not in EXCLUDE_ACCOUNT_TAGS]
+
+  if len(INCLUDE_FIELDS) > 0: temp_cur_original_columns = [item for item in temp_cur_original_columns if item.lower().strip() in INCLUDE_FIELDS]
+  if len(INCLUDE_ACCOUNT_TAGS) > 0: account_tags_columns = [item for item in account_tags_columns if item.lower().strip().replace('account_tag_', '') in INCLUDE_ACCOUNT_TAGS]
+
+  if PARTITION_BY_ACCOUNT: 
+      temp_cur_original_columns = [item for item in temp_cur_original_columns if item not in ['line_item_usage_account_id']]
+      column_string = "\""+"\",\"".join(temp_cur_original_columns)+"\","+"\""+"\",\"".join(filter(None,account_tags_columns))+"\""+',"line_item_usage_account_id"'
+  else:
+      column_string = column_string = "\""+"\",\"".join(temp_cur_original_columns)+"\","+"\""+"\",\"".join(account_tags_columns)+"\""
+
+  column_string = column_string.replace(",\"\"", "").replace("\"\",", "")
+  log.debug("Final list of columns: {}".format(column_string))
+  
   # Rather than loading the CUR data into a dataframe and merging, which can be memory and CPU intensive, the command below uses an Athena CTAS statement to 
   # create a new table with the joined data. The data is written to S3 in Parquet format. 
   # Note: Another reason for using Athena is that CUR Parquet files use the Parquet V2 format and occasionally uses DELTA encoded columns. These columns
   # are not currently readable with Pandas - and more specifically the pyarrow package. 
   # https://github.com/awslabs/aws-data-wrangler/issues/442
   # 
+  log.info('Writing output to {}'.format("s3://"+S3_TARGET_BUCKET+"/"+(S3_TARGET_PREFIX+"/" if S3_TARGET_PREFIX != "" else "")+ s3_prefix.split('/', 3)[3]))
   wr.athena.read_sql_query(
     database=DATABASE_NAME,
     ctas_approach=False,
@@ -236,7 +266,7 @@ for s3_prefix in s3_prefixes:
   )
 
   # Once the enriched CUR data is written to S3 by Athena, we can remove the table definition the CTAS statement created in the catalog. 
-  print('CLEANING UP TEMP TABLES IF THEY EXIST')
+  log.info('CLEANING UP TEMP TABLES IF THEY EXIST')
   wr.catalog.delete_table_if_exists(
     database=DATABASE_NAME,
     table='temp_cur_enriched'
@@ -246,12 +276,12 @@ for s3_prefix in s3_prefixes:
     database=DATABASE_NAME,
     table='temp_cur_original'
   )
-  print("=============")
+  log.info("=============")
 
 
 if CREATE_TABLE:
   if OVERWRITE_EXISTING_TABLE:
-    print("Deleting {}.{} if it exists".format(DATABASE_NAME, TABLE_NAME))
+    log.info("Deleting {}.{} if it exists".format(DATABASE_NAME, TABLE_NAME))
     wr.catalog.delete_table_if_exists(
       database=DATABASE_NAME,
       table=TABLE_NAME
