@@ -79,10 +79,10 @@ The Glue jobs are configured to pass arguments to the script that determine how 
 
 ```
 usage: glue-enrich-cur.py [-h] --s3_source_bucket S3_SOURCE_BUCKET --s3_source_prefix S3_SOURCE_PREFIX --s3_target_bucket S3_TARGET_BUCKET [--s3_target_prefix S3_TARGET_PREFIX]
-                          [--incremental_mode_months INCREMENTAL_MODE_MONTHS] [--create_table CREATE_TABLE] [--overwrite_existing_table OVERWRITE_EXISTING_TABLE]
-                          [--partition_by_account PARTITION_BY_ACCOUNT] [--database_name DATABASE_NAME] [--table_name TABLE_NAME] [--exclude_fields [EXCLUDE_FIELDS ...]]
-                          [--include_fields [INCLUDE_FIELDS ...]] [--include_account_tags [INCLUDE_ACCOUNT_TAGS ...]] [--exclude_account_tags [EXCLUDE_ACCOUNT_TAGS ...]] [--extra-py-files EXTRA_PY_FILES]
-                          [--scriptLocation SCRIPTLOCATION] [--job-bookmark-option JOB_BOOKMARK_OPTION] [--job-language JOB_LANGUAGE]
+                          [--incremental_mode_months INCREMENTAL_MODE_MONTHS] [--create_table] [--overwrite_existing_table] [--partition_by_account] [--database_name DATABASE_NAME]
+                          [--table_name TABLE_NAME] [--exclude_fields [EXCLUDE_FIELDS ...]] [--include_fields [INCLUDE_FIELDS ...]] [--include_account_tags [INCLUDE_ACCOUNT_TAGS ...]]
+                          [--exclude_account_tags [EXCLUDE_ACCOUNT_TAGS ...]] [--extra-py-files EXTRA_PY_FILES] [--scriptLocation SCRIPTLOCATION] [--job-bookmark-option JOB_BOOKMARK_OPTION]
+                          [--job-language JOB_LANGUAGE] [--connection-names CONNECTION_NAMES]
 
 Enriches CUR data stored in S3 and enriches S3 by adding organizational account tags as columns to line items.
 
@@ -98,11 +98,10 @@ optional arguments:
                         The destination prefix (path) where enriched CUR data will be placed. Put this in a prefix that is OUTSIDE of the original CUR data prefix.
   --incremental_mode_months INCREMENTAL_MODE_MONTHS
                         When set, last x months of CUR data is processed. When not set or set to 0, all data is processed. For incremental updates, recommend setting this to 2.
-  --create_table CREATE_TABLE
-                        When set, a table will be created in Glue automatically and made available through Athena.
-  --overwrite_existing_table OVERWRITE_EXISTING_TABLE
+  --create_table        When set, a table will be created in Glue automatically and made available through Athena.
+  --overwrite_existing_table
                         When set, the existing table will be overwritten. This should be set when performing updates.
-  --partition_by_account PARTITION_BY_ACCOUNT
+  --partition_by_account
                         When set, an additional partition for line_item_usage_account_id will be created. Example: /year=2020/month=1/line_item_usage_account_id=123456789012
   --database_name DATABASE_NAME
                         The name of the Glue database to create the table in. Must be set when --create_table is set
@@ -125,6 +124,8 @@ optional arguments:
   --job-bookmark-option JOB_BOOKMARK_OPTION
                         NOT USED
   --job-language JOB_LANGUAGE
+                        NOT USED
+  --connection-names CONNECTION_NAMES
                         NOT USED
 ```            
 

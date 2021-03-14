@@ -136,11 +136,11 @@ Resources:
         "--s3_source_bucket": !Ref S3SourceBucket
         "--s3_target_bucket": !Ref EnrichedCURBucket
         "--s3_source_prefix": !Ref S3SourcePrefix
-        "--create_table": "True"
+        "--create_table": ""
         "--database_name": !Ref EnrichedCURGlueDB
         "--table_name": "cur_enriched"
-        "--overwrite_existing_table": "True" 
-        "--partition_by_account": "True"
+        "--overwrite_existing_table": ""
+        "--partition_by_account": ""
         "--extra-py-files": !Sub 's3://${EnrichedCURBucket}/awswrangler-2.5.0-py3-none-any.whl'
       GlueVersion: "1.0"
       ExecutionProperty:
@@ -160,11 +160,11 @@ Resources:
         "--s3_source_bucket": !Ref S3SourceBucket
         "--s3_target_bucket": !Ref EnrichedCURBucket
         "--s3_source_prefix": !Ref S3SourcePrefix
-        "--create_table": "True"
+        "--create_table": ""
         "--database_name": !Ref EnrichedCURGlueDB
         "--table_name": "cur_enriched"
-        "--overwrite_existing_table": "True"
-        "--partition_by_account": "True"
+        "--overwrite_existing_table": ""
+        "--partition_by_account": ""
         "--incremental_mode_months": "2"
         "--extra-py-files": !Sub 's3://${EnrichedCURBucket}/awswrangler-2.5.0-py3-none-any.whl'
       GlueVersion: "1.0"

@@ -26,10 +26,15 @@ import awswrangler as wr
 import boto3
 import pandas as pd
 
-logging.basicConfig(level=logging.INFO)
+logging.basicConfig(stream=sys.stdout, level=logging.INFO)
 
 log = logging.getLogger(__name__)
 log.setLevel(logging.INFO)
+handler = logging.StreamHandler(sys.stdout)
+handler.setLevel(logging.DEBUG)
+formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+handler.setFormatter(formatter)
+log.addHandler(handler)
 
 orgs_client = boto3.client('organizations')
 
@@ -64,9 +69,9 @@ arg_parser.add_argument('--s3_source_prefix', required=True, help="The source pr
 arg_parser.add_argument('--s3_target_bucket', required=True, help="The destination bucket to put enriched CUR data.")
 arg_parser.add_argument('--s3_target_prefix', required=False, default="", help="The destination prefix (path) where enriched CUR data will be placed. Put this in a prefix that is OUTSIDE of the original CUR data prefix.")
 arg_parser.add_argument('--incremental_mode_months', type=int, required=False, default=0, help="When set, last x months of CUR data is processed. When not set or set to 0, all data is processed. For incremental updates, recommend setting this to 2.")
-arg_parser.add_argument('--create_table', action='store', required=False, default=False, help="When set, a table will be created in Glue automatically and made available through Athena.")
-arg_parser.add_argument('--overwrite_existing_table', type=bool, action='store', required=False, default=False, help="When set, the existing table will be overwritten. This should be set when performing updates.")
-arg_parser.add_argument('--partition_by_account', type=bool, action='store', required=False, default=False, help="When set, an additional partition for line_item_usage_account_id will be created. Example: /year=2020/month=1/line_item_usage_account_id=123456789012")
+arg_parser.add_argument('--create_table', action='store_true', required=False, default=False, help="When set, a table will be created in Glue automatically and made available through Athena.")
+arg_parser.add_argument('--overwrite_existing_table', action='store_true', required=False, default=False, help="When set, the existing table will be overwritten. This should be set when performing updates.")
+arg_parser.add_argument('--partition_by_account', action='store_true', required=False, default=False, help="When set, an additional partition for line_item_usage_account_id will be created. Example: /year=2020/month=1/line_item_usage_account_id=123456789012")
 arg_parser.add_argument('--database_name', type=str, required=False, default=None, help="The name of the Glue database to create the table in. Must be set when --create_table is set")
 arg_parser.add_argument('--table_name', type=str, required=False, default=None, help="The name of the Glue table to create or overwrite. Must be set when --create_table is set")
 arg_parser.add_argument('--exclude_fields', type=str, nargs="*", required=False, default=[], help="Columns or fields in the CUR data to exclude from the enriched report. Useful for creating resports with fewer columns. This does not affect AWS account tags, use --exclude_account_tags for that.")
@@ -288,14 +293,14 @@ if CREATE_TABLE:
     )
   
 
-  print ("Extracting parquet metadata from {}".format( "s3://"+S3_TARGET_BUCKET+"/"+s3_prefix.split('/', 3)[3]+"/"))
+  log.info("Extracting parquet metadata from {}".format( "s3://"+S3_TARGET_BUCKET+"/"+s3_prefix.split('/', 3)[3]+"/"))
   cur_column_types, partitions = wr.s3.read_parquet_metadata(
     path="s3://"+S3_TARGET_BUCKET+"/"+s3_prefix.split('/', 3)[3]+"/",
     dataset=True,
     sampling=1
   ) 
 
-  print ("Creating Table {}.{} with path {}".format(DATABASE_NAME, TABLE_NAME, "s3://"+S3_TARGET_BUCKET+"/"+(S3_SOURCE_PREFIX+"/" if S3_SOURCE_PREFIX != "" else "")))
+  log.info("Creating Table {}.{} with path {}".format(DATABASE_NAME, TABLE_NAME, "s3://"+S3_TARGET_BUCKET+"/"+(S3_SOURCE_PREFIX+"/" if S3_SOURCE_PREFIX != "" else "")))
   wr.catalog.create_parquet_table(
     path = "s3://"+S3_TARGET_BUCKET+"/"+(S3_SOURCE_PREFIX+"/" if S3_SOURCE_PREFIX != "" else ""),
     database = DATABASE_NAME,
@@ -305,11 +310,11 @@ if CREATE_TABLE:
   )
 
   
-  print ("Updated Table Partitions {}.{}".format(DATABASE_NAME, TABLE_NAME))
+  log.info("Updated Table Partitions {}.{}".format(DATABASE_NAME, TABLE_NAME))
   wr.athena.repair_table(
     database=DATABASE_NAME,
     table=TABLE_NAME
   ) 
 
 
-print ("Finished")
+log.info ("Finished")
